@@ -2,7 +2,7 @@ name: CD - Build and Push Docker Images
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+  DOCKER_USERNAME: kritiwork825
 
 on:
   push:
