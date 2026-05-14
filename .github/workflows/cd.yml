@@ -46,7 +46,7 @@ jobs:
           context: ./frontend
           push: true
           tags: |
-            ${{ env.DOCKER_USERNAME }}/observatory-ui:latest
-            ${{ env.DOCKER_USERNAME }}/observatory-ui:${{ github.sha }}
+            kritiwork825/observatory-ui:latest
+            kritiwork825/observatory-ui:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
