@@ -141,11 +141,16 @@ const DoraMetrics = ({ workflows }) => {
 
       {metrics.chartData.length > 0 && (
         <div className="glass-panel p-6 bg-brand-bg/50 border-white/5">
-          <div className="flex justify-between items-center mb-6">
-            <h5 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-accent-primary animate-pulse"></div>
-              Deployment Velocity Timeline
-            </h5>
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+            <div>
+              <h5 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-accent-primary animate-pulse"></div>
+                Deployment Velocity Timeline
+              </h5>
+              <p className="text-[10px] text-gray-500 mt-1 max-w-md">
+                Historical record of CI/CD throughput. Bars represent daily deployment volume, showing the ratio of stable vs. failing builds.
+              </p>
+            </div>
             <div className="flex gap-4">
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-accent-success"></div>

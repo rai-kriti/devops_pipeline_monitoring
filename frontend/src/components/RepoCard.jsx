@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Star, GitBranch, Activity, Calendar, RefreshCcw, AlertOctagon, ChevronDown, ChevronUp, BarChart2, ExternalLink, Cpu, Timer, CheckCircle2, XCircle, PlayCircle, SkipForward } from 'lucide-react';
+import { Star, GitBranch, Activity, Calendar, RefreshCcw, AlertOctagon, ChevronDown, ChevronUp, BarChart2, ExternalLink, Cpu, Timer, CheckCircle2, XCircle, PlayCircle, SkipForward, Info } from 'lucide-react';
 import WorkflowBadge from './WorkflowBadge';
 import DoraMetrics from './DoraMetrics';
 import { analyzePattern } from '../services/api';
@@ -103,27 +103,39 @@ const RepoCard = ({ repo, username }) => {
 
         {/* Workflow Stats Pills */}
         <div className="flex items-center gap-2">
-          <div className="flex bg-black/20 p-1 rounded-lg border border-white/5">
-            <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-accent-success uppercase">
+          <div className="flex bg-black/20 p-1 rounded-lg border border-white/5" title="Workflow Executions">
+            <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-accent-success uppercase" title="Successes">
               <CheckCircle2 className="h-3 w-3" /> {stats.success}
+              <span className="hidden lg:inline text-[8px] opacity-50 ml-0.5">Success</span>
             </div>
             <div className="w-[1px] h-3 bg-white/5 self-center mx-1"></div>
-            <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-accent-failure uppercase">
+            <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-accent-failure uppercase" title="Failures">
               <XCircle className="h-3 w-3" /> {stats.failed}
+              <span className="hidden lg:inline text-[8px] opacity-50 ml-0.5">Failed</span>
             </div>
             <div className="w-[1px] h-3 bg-white/5 self-center mx-1"></div>
-            <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-accent-info uppercase">
+            <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-accent-info uppercase" title="In Progress / Queued">
               <PlayCircle className="h-3 w-3" /> {stats.running}
+              <span className="hidden lg:inline text-[8px] opacity-50 ml-0.5">Active</span>
             </div>
           </div>
 
           <div
-            className={`flex flex-col items-center justify-center min-w-[70px] h-12 rounded-lg border ${getHealthBg(healthScore)} transition-all`}
+            className={`flex flex-col items-center justify-center min-w-[70px] h-12 rounded-lg border ${getHealthBg(healthScore)} transition-all relative group/health`}
           >
             <span className={`text-lg font-black leading-none ${getHealthColor(healthScore)}`}>
               {healthScore !== null ? `${healthScore}%` : 'N/A'}
             </span>
-            <span className="text-[8px] font-bold uppercase tracking-widest text-gray-500 mt-1">Stability</span>
+            <span className="text-[8px] font-bold uppercase tracking-widest text-gray-500 mt-1 flex items-center gap-1">
+              Stability
+              <Info size={8} className="text-gray-600" />
+            </span>
+            
+            {/* Tooltip for Stability */}
+            <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 p-2 bg-gray-900 border border-white/10 rounded-lg text-[9px] text-gray-400 opacity-0 group-hover/health:opacity-100 transition-opacity pointer-events-none z-50 shadow-2xl">
+              <p className="font-bold text-white mb-1 uppercase tracking-widest">Reliability Score</p>
+              Percentage of successful workflow completions. Higher indicates a more stable delivery pipeline.
+            </div>
           </div>
 
           <button

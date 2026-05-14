@@ -6,6 +6,7 @@ const errorHandler = require('./middleware/errorHandler');
 
 const githubRoutes = require('./routes/github');
 const aiRoutes = require('./routes/ai');
+const dockerRoutes = require('./routes/docker');
 const healthRoutes = require('./routes/health');
 
 const app = express();
@@ -21,6 +22,7 @@ app.use(morgan('dev'));
 // Routes
 app.use('/github', githubRoutes);
 app.use('/ai', aiRoutes);
+app.use('/docker', dockerRoutes);
 app.use('/health', healthRoutes);
 
 // Error Handling
