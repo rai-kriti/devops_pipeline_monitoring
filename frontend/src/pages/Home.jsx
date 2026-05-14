@@ -7,6 +7,7 @@ import { Search, Loader2, Activity, GitBranch, Globe, Cpu, Database, Cloud, Book
 
 const Home = () => {
   const [username, setUsername] = useState('');
+  const [activeTarget, setActiveTarget] = useState('');
   const [repos, setRepos] = useState([]);
   const [dockerImages, setDockerImages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -34,14 +35,17 @@ const Home = () => {
       if (activeTab === 'github') {
         const data = await getRepos(user, skipCache);
         setRepos(data);
+        setActiveTarget(user);
       } else {
         const data = await getDockerImages(user, skipCache);
         setDockerImages(data);
+        setActiveTarget(user);
       }
     } catch (err) {
       setError(err.response?.data?.error || `Failed to fetch ${activeTab === 'github' ? 'repositories' : 'Docker images'}. Please check the username and try again.`);
       if (activeTab === 'github') setRepos([]);
       else setDockerImages([]);
+      setActiveTarget('');
     } finally {
       setLoading(false);
     }
@@ -220,6 +224,25 @@ const Home = () => {
         <Docs />
       ) : (
         <>
+          {activeTarget && !loading && !error && (
+            <div className="mb-8 animate-in fade-in slide-in-from-left-4 duration-700">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-accent-primary/10 rounded-xl border border-accent-primary/20">
+                  {activeTab === 'github' ? <GitBranch className="h-6 w-6 text-accent-primary" /> : <Database className="h-6 w-6 text-accent-primary" />}
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 mb-0.5">Active Observatory</p>
+                  <h2 className="text-3xl font-black text-white flex items-center gap-2">
+                    {activeTarget}
+                    <span className="text-xs font-normal text-gray-500 px-2 py-0.5 bg-white/5 rounded-md border border-white/10 uppercase tracking-widest">
+                      {activeTab}
+                    </span>
+                  </h2>
+                </div>
+              </div>
+            </div>
+          )}
+
           {error && (
             <div className="mt-8 glass-panel border-accent-failure/30 bg-accent-failure/5 p-4 flex gap-4 items-center print:hidden">
               <div className="w-10 h-10 rounded-full bg-accent-failure/20 flex items-center justify-center flex-shrink-0">
