@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-bg: #0b1020;
+  --color-brand-card: #111827;
+  --color-brand-surface: #0f172a;
+  
+  --color-accent-primary: #3b82f6;
+  --color-accent-secondary: #a855f7;
+  --color-accent-success: #10b981;
+  --color-accent-warning: #f59e0b;
+  --color-accent-failure: #f43f5e;
+  --color-accent-info: #06b6d4;
+
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-brand-bg text-gray-300 antialiased;
+    background-image: 
+      radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.05) 0px, transparent 50%),
+      radial-gradient(at 100% 0%, rgba(168, 85, 247, 0.05) 0px, transparent 50%);
+    background-attachment: fixed;
+  }
+
+  h1, h2, h3, h4 {
+    @apply text-white font-semibold tracking-tight;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-brand-card/70 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl;
+  }
+
+  .glass-card {
+    @apply bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl transition-all duration-300;
+  }
+
+  .glass-card:hover {
+    @apply border-white/20 bg-white/10 shadow-lg shadow-accent-primary/10;
+  }
+
+  .nav-blur {
+    @apply sticky top-0 z-50 bg-brand-bg/80 backdrop-blur-lg border-b border-white/5;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium transition-all duration-200
+           bg-accent-primary text-white hover:bg-blue-600 focus:ring-2 focus:ring-accent-primary/50 disabled:opacity-50;
+  }
+
+  .input-search {
+    @apply block w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500
+           focus:outline-none focus:ring-2 focus:ring-accent-primary/40 focus:border-accent-primary/40 transition-all;
+  }
+
+  .status-pill {
+    @apply px-2.5 py-0.5 rounded-full text-xs font-medium border;
+  }
+
+  .terminal-box {
+    @apply font-mono bg-black/40 border border-white/10 rounded-lg p-4 text-sm leading-relaxed;
+  }
+
+  .ai-glow {
+    @apply relative;
+  }
+
+  .ai-glow::after {
+    content: '';
+    @apply absolute -inset-0.5 bg-gradient-to-r from-accent-primary to-accent-secondary rounded-2xl blur opacity-20 -z-10 transition-opacity duration-500;
+  }
+
+  .ai-glow:hover::after {
+    @apply opacity-40;
+  }
+}
+
+/* Animations */
+@keyframes pulse-slow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
