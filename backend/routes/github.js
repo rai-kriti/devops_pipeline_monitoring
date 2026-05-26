@@ -12,9 +12,20 @@ const githubAPI = axios.create({
 router.get('/repos/:username', async (req, res, next) => {
   try {
     const { username } = req.params;
-    
-    // Fetch repos
-    const reposRes = await githubAPI.get(`/users/${username}/repos?sort=pushed&per_page=10`);
+
+    // Detect if this is a GitHub Organization or a regular User
+    // They have different API endpoints, and using /users/ for an org
+    // returns an incorrect/inconsistent repo ordering.
+    const accountRes = await githubAPI.get(`/users/${username}`);
+    const accountType = accountRes.data.type; // 'Organization' or 'User'
+
+    const repoEndpoint =
+      accountType === 'Organization'
+        ? `/orgs/${username}/repos?sort=pushed&per_page=10`
+        : `/users/${username}/repos?sort=pushed&per_page=10`;
+
+    // Fetch repos using the correct endpoint
+    const reposRes = await githubAPI.get(repoEndpoint);
     const repos = reposRes.data;
 
     // For each repo, fetch last 5 workflow runs
