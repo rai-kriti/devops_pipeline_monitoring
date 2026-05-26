@@ -14,7 +14,7 @@ router.get('/repos/:username', async (req, res, next) => {
     const { username } = req.params;
     
     // Fetch repos
-    const reposRes = await githubAPI.get(`/users/${username}/repos?sort=updated&per_page=10`);
+    const reposRes = await githubAPI.get(`/users/${username}/repos?sort=pushed&per_page=10`);
     const repos = reposRes.data;
 
     // For each repo, fetch last 5 workflow runs
