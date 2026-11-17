@@ -1,0 +1,57 @@
+define host {
+    use                     generic-host
+    host_name               observatory-app
+    alias                   DevOps Observatory application host
+    address                 {{ nagios_app_private_ip }}
+    check_command           check-host-alive
+}
+
+define command {
+    command_name            check_observatory_nrpe
+    command_line            $USER1$/check_nrpe -H $HOSTADDRESS$ -c $ARG1$
+}
+
+define command {
+    command_name            check_observatory_frontend
+    command_line            $USER1$/check_http -I $HOSTADDRESS$ -p 80 -u /
+}
+
+define command {
+    command_name            check_observatory_backend
+    command_line            $USER1$/check_http -I $HOSTADDRESS$ -p 5000 -u /health -s healthy
+}
+
+define service {
+    use                     generic-service
+    host_name               observatory-app
+    service_description     CPU Load
+    check_command           check_observatory_nrpe!observatory_check_load
+}
+
+define service {
+    use                     generic-service
+    host_name               observatory-app
+    service_description     Memory Usage
+    check_command           check_observatory_nrpe!observatory_check_memory
+}
+
+define service {
+    use                     generic-service
+    host_name               observatory-app
+    service_description     Root Disk
+    check_command           check_observatory_nrpe!observatory_check_disk_root
+}
+
+define service {
+    use                     generic-service
+    host_name               observatory-app
+    service_description     Frontend HTTP
+    check_command           check_observatory_frontend
+}
+
+define service {
+    use                     generic-service
+    host_name               observatory-app
+    service_description     Backend Health
+    check_command           check_observatory_backend
+}

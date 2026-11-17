@@ -1,0 +1,161 @@
+---
+- name: Configure the application host and deploy production containers
+  hosts: app
+  become: true
+
+  vars:
+    app_deploy_dir: /opt/devops-observatory
+    docker_auth_dir: /run/devops-observatory-docker-auth
+    dockerhub_username: "{{ lookup('ansible.builtin.env', 'DOCKERHUB_USERNAME') }}"
+    dockerhub_token: "{{ lookup('ansible.builtin.env', 'DOCKERHUB_TOKEN') }}"
+    openrouter_api_key: "{{ lookup('ansible.builtin.env', 'OPENROUTER_API_KEY') }}"
+    github_token: "{{ lookup('ansible.builtin.env', 'GITHUB_TOKEN') }}"
+    frontend_url: "{{ lookup('ansible.builtin.env', 'FRONTEND_URL') | default('*', true) }}"
+    image_tag: "{{ lookup('ansible.builtin.env', 'IMAGE_TAG') | default('latest', true) }}"
+
+  pre_tasks:
+    - name: Require deployment credentials and application API keys
+      ansible.builtin.assert:
+        that:
+          - dockerhub_username | length > 0
+          - dockerhub_token | length > 0
+          - openrouter_api_key | length > 0
+          - github_token | length > 0
+          - image_tag | length > 0
+        fail_msg: >-
+          Set DOCKERHUB_USERNAME, DOCKERHUB_TOKEN, OPENROUTER_API_KEY, and
+          GITHUB_TOKEN in the Ansible controller environment, and provide IMAGE_TAG.
+
+  tasks:
+    - name: Install Docker Engine and Compose plugin
+      ansible.builtin.apt:
+        name:
+          - docker.io
+          - docker-compose-v2
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Enable and start Docker
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Create application deployment directory
+      ansible.builtin.file:
+        path: "{{ app_deploy_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Install production Compose configuration without modifying it
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../../docker-compose.prod.yml"
+        dest: "{{ app_deploy_dir }}/docker-compose.prod.yml"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Install additive image-tag Compose override
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../../docker-compose.deploy.yml"
+        dest: "{{ app_deploy_dir }}/docker-compose.deploy.yml"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Write production environment file
+      ansible.builtin.template:
+        src: templates/app.env.j2
+        dest: "{{ app_deploy_dir }}/.env"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Pull published images using temporary Docker Hub credentials
+      block:
+        - name: Create temporary Docker credential directory
+          ansible.builtin.file:
+            path: "{{ docker_auth_dir }}"
+            state: directory
+            owner: root
+            group: root
+            mode: "0700"
+
+        - name: Authenticate to Docker Hub
+          ansible.builtin.command:
+            argv:
+              - docker
+              - login
+              - --username
+              - "{{ dockerhub_username }}"
+              - --password-stdin
+            stdin: "{{ dockerhub_token }}"
+          environment:
+            DOCKER_CONFIG: "{{ docker_auth_dir }}"
+          changed_when: true
+          no_log: true
+
+        - name: Pull frontend and backend images
+          ansible.builtin.command:
+            argv:
+              - docker
+              - compose
+              - -f
+              - docker-compose.prod.yml
+              - -f
+              - docker-compose.deploy.yml
+              - pull
+            chdir: "{{ app_deploy_dir }}"
+          environment:
+            DOCKER_CONFIG: "{{ docker_auth_dir }}"
+          changed_when: true
+      always:
+        - name: Remove temporary Docker credentials
+          ansible.builtin.file:
+            path: "{{ docker_auth_dir }}"
+            state: absent
+
+    - name: Start the production Compose stack
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - -f
+          - docker-compose.prod.yml
+          - -f
+          - docker-compose.deploy.yml
+          - up
+          - -d
+          - --remove-orphans
+        chdir: "{{ app_deploy_dir }}"
+      register: compose_up
+      changed_when: >-
+        'Creating' in compose_up.stdout or
+        'Recreating' in compose_up.stdout or
+        'Starting' in compose_up.stdout or
+        'Created' in compose_up.stdout or
+        'Started' in compose_up.stdout
+
+    - name: Wait for backend health endpoint
+      ansible.builtin.uri:
+        url: http://127.0.0.1:5000/health
+        method: GET
+        status_code: 200
+      register: backend_health
+      retries: 12
+      delay: 5
+      until: backend_health.status == 200
+
+    - name: Wait for frontend HTTP endpoint
+      ansible.builtin.uri:
+        url: http://127.0.0.1/
+        method: GET
+        status_code: 200
+      register: frontend_health
+      retries: 12
+      delay: 5
+      until: frontend_health.status == 200

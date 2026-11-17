@@ -1,0 +1,17 @@
+all:
+  vars:
+    ansible_user: ubuntu
+    ansible_ssh_private_key_file: /path/to/your-ec2-key.pem
+  children:
+    app:
+      vars:
+        nagios_private_ip: 10.40.1.21
+      hosts:
+        observatory-app:
+          ansible_host: 203.0.113.20
+    nagios:
+      vars:
+        observatory_app_private_ip: 10.40.1.20
+      hosts:
+        observatory-nagios:
+          ansible_host: 203.0.113.21

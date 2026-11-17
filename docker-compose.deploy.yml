@@ -1,0 +1,6 @@
+services:
+  backend:
+    image: ${DOCKERHUB_USERNAME}/observatory-api:${IMAGE_TAG}
+
+  frontend:
+    image: ${DOCKERHUB_USERNAME}/observatory-ui:${IMAGE_TAG}

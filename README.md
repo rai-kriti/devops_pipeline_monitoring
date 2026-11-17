@@ -41,3 +41,14 @@ Instead of manually digging through hundreds of lines of raw GitHub Actions logs
 3. The frontend calculates the health scores and renders the repository cards.
 4. When a user expands the analytics panel, the frontend renders the DORA metrics and triggers the Pattern Detection engine.
 5. If a user clicks the "Bot" icon on a failed run, the backend parses the failed job's steps and sends the metadata to the LLM to generate the diagnostic report.
+
+## AWS deployment
+
+The AWS deployment is additive to the existing Docker and Compose setup:
+
+- Terraform infrastructure: [`infra/terraform/README.md`](./infra/terraform/README.md)
+- Ansible deployment and Nagios configuration: [`infra/ansible/README.md`](./infra/ansible/README.md)
+- The existing `docker-compose.prod.yml` remains unchanged; `docker-compose.deploy.yml` is an image-tag override used to deploy the exact published commit.
+- The infrastructure workflow is manually dispatched and protected; the existing CD workflow still publishes images, now gated by CI, and a separate workflow deploys them through AWS Systems Manager.
+
+Before using the workflows, configure the AWS OIDC roles, Terraform state bucket, Ansible SSM transfer bucket, Docker Hub/API secrets, and a protected GitHub `production` environment as described in the linked guides.

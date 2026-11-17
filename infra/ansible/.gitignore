@@ -1,0 +1,5 @@
+inventory/hosts.yml
+inventory/ci-ssm-inventory.json
+*.retry
+__pycache__/
+*.py[cod]

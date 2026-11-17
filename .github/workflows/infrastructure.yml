@@ -1,0 +1,89 @@
+name: AWS Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Review a plan or apply it to AWS
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+        default: plan
+      ssh_key_name:
+        description: Existing EC2 key-pair name in the selected region
+        required: true
+        type: string
+      ssh_allowed_cidr:
+        description: Trusted IPv4 CIDR for SSH access
+        required: true
+        type: string
+      nagios_ui_allowed_cidr:
+        description: Trusted IPv4 CIDR for Nagios UI access
+        required: true
+        type: string
+      app_api_allowed_cidr:
+        description: IPv4 CIDR allowed to reach the public backend API
+        required: true
+        type: string
+        default: 0.0.0.0/0
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_TERRAFORM_ROLE_ARN: ${{ vars.AWS_TERRAFORM_ROLE_ARN }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      TF_VAR_aws_region: ${{ vars.AWS_REGION }}
+      TF_VAR_ssh_key_name: ${{ inputs.ssh_key_name }}
+      TF_VAR_ssh_allowed_cidr: ${{ inputs.ssh_allowed_cidr }}
+      TF_VAR_nagios_ui_allowed_cidr: ${{ inputs.nagios_ui_allowed_cidr }}
+      TF_VAR_app_api_allowed_cidr: ${{ inputs.app_api_allowed_cidr }}
+
+    steps:
+      - name: Check out infrastructure code
+        uses: actions/checkout@v4
+
+      - name: Check AWS infrastructure configuration
+        run: |
+          test -n "$AWS_REGION"
+          test -n "$AWS_TERRAFORM_ROLE_ARN"
+          test -n "$TF_STATE_BUCKET"
+
+      - name: Configure AWS credentials with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Initialize Terraform
+        run: |
+          terraform -chdir=infra/terraform init -input=false \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=devops-observatory/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Format and validate Terraform
+        run: |
+          terraform -chdir=infra/terraform fmt -check -recursive
+          terraform -chdir=infra/terraform validate
+
+      - name: Create Terraform plan
+        run: terraform -chdir=infra/terraform plan -input=false -out=tfplan
+
+      - name: Apply reviewed Terraform plan
+        if: inputs.operation == 'apply'
+        run: terraform -chdir=infra/terraform apply -input=false -auto-approve tfplan

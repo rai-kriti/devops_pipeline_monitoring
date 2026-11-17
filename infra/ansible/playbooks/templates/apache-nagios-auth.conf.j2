@@ -1,0 +1,8 @@
+<DirectoryMatch (/usr/share/nagios4/htdocs|/usr/lib/cgi-bin/nagios4|/etc/nagios4/stylesheets)>
+    AuthType Basic
+    AuthName "DevOps Observatory Nagios"
+    AuthBasicProvider file
+    AuthUserFile /etc/nagios4/htpasswd.users
+    AuthMerging Off
+    Require valid-user
+</DirectoryMatch>

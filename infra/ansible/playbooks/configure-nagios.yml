@@ -1,0 +1,218 @@
+---
+- name: Install remote monitoring agent on the application host
+  hosts: app
+  become: true
+
+  vars:
+    nagios_memory_warning: 80
+    nagios_memory_critical: 90
+
+  pre_tasks:
+    - name: Require Nagios private address
+      ansible.builtin.assert:
+        that:
+          - nagios_private_ip is defined
+          - nagios_private_ip | length > 0
+        fail_msg: Set nagios_private_ip in the app inventory group.
+
+  tasks:
+    - name: Install NRPE server and monitoring plugins
+      ansible.builtin.apt:
+        name:
+          - nagios-nrpe-server
+          - monitoring-plugins-basic
+          - python3
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Restrict NRPE access to localhost and the Nagios host
+      ansible.builtin.lineinfile:
+        path: /etc/nagios/nrpe.cfg
+        regexp: '^[#\s]*allowed_hosts='
+        line: "allowed_hosts=127.0.0.1,::1,{{ nagios_private_ip }}"
+        backup: true
+      notify: Restart NRPE
+
+    - name: Create memory plugin directory
+      ansible.builtin.file:
+        path: /usr/local/lib/nagios/plugins
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Copy memory monitoring plugin
+      ansible.builtin.copy:
+        src: files/check_memory.py
+        dest: /usr/local/lib/nagios/plugins/check_memory.py
+        owner: root
+        group: root
+        mode: "0755"
+      notify: Restart NRPE
+
+    - name: Configure app host checks for NRPE
+      ansible.builtin.template:
+        src: templates/nrpe-observatory.cfg.j2
+        dest: /etc/nagios/nrpe_local.cfg
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart NRPE
+
+    - name: Ensure NRPE is enabled and running
+      ansible.builtin.service:
+        name: nagios-nrpe-server
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Restart NRPE
+      ansible.builtin.service:
+        name: nagios-nrpe-server
+        state: restarted
+
+- name: Install Nagios Core and configure application monitoring
+  hosts: nagios
+  become: true
+
+  vars:
+    nagios_web_username: nagiosadmin
+    nagios_web_password: "{{ lookup('ansible.builtin.env', 'NAGIOS_WEB_PASSWORD') }}"
+    nagios_app_private_ip: "{{ observatory_app_private_ip }}"
+
+  pre_tasks:
+    - name: Require Nagios web password and application private address
+      ansible.builtin.assert:
+        that:
+          - nagios_web_password | length >= 12
+          - nagios_app_private_ip | length > 0
+        fail_msg: >-
+          Set NAGIOS_WEB_PASSWORD (at least 12 characters) in the controller
+          environment and observatory_app_private_ip in the Nagios inventory group.
+
+  tasks:
+    - name: Install Nagios Core, Apache, and monitoring plugins
+      ansible.builtin.apt:
+        name:
+          - nagios4
+          - nagios4-cgi
+          - apache2
+          - nagios-nrpe-plugin
+          - monitoring-plugins-basic
+          - apache2-utils
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create or update Nagios web login
+      ansible.builtin.command:
+        argv:
+          - htpasswd
+          - -B
+          - -i
+          - -c
+          - /etc/nagios4/htpasswd.users
+          - "{{ nagios_web_username }}"
+        stdin: "{{ nagios_web_password }}"
+      no_log: true
+      changed_when: true
+
+    - name: Set Nagios web password file permissions
+      ansible.builtin.file:
+        path: /etc/nagios4/htpasswd.users
+        owner: root
+        group: www-data
+        mode: "0640"
+
+    - name: Enable the Nagios Apache configuration
+      ansible.builtin.command:
+        argv:
+          - a2enconf
+          - nagios4-cgi
+        creates: /etc/apache2/conf-enabled/nagios4-cgi.conf
+
+    - name: Enable the Apache CGI module
+      ansible.builtin.command:
+        argv:
+          - a2enmod
+          - cgi
+        creates: /etc/apache2/mods-enabled/cgi.load
+
+    - name: Install authenticated Nagios Apache configuration
+      ansible.builtin.template:
+        src: templates/apache-nagios-auth.conf.j2
+        dest: /etc/apache2/conf-available/nagios4-zz-observatory-auth.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart Apache
+
+    - name: Enable authenticated Nagios Apache configuration
+      ansible.builtin.command:
+        argv:
+          - a2enconf
+          - nagios4-zz-observatory-auth
+        creates: /etc/apache2/conf-enabled/nagios4-zz-observatory-auth.conf
+      notify: Restart Apache
+
+    - name: Install Nagios host and service checks
+      ansible.builtin.template:
+        src: templates/observatory-nagios.cfg.j2
+        dest: /etc/nagios4/conf.d/observatory.cfg
+        owner: nagios
+        group: nagios
+        mode: "0644"
+      notify: Restart Nagios
+
+    - name: Restrict Nagios CGI permissions to the administrator account
+      ansible.builtin.lineinfile:
+        path: /etc/nagios4/cgi.cfg
+        regexp: "^{{ item }}="
+        line: "{{ item }}={{ nagios_web_username }}"
+        backup: true
+      loop:
+        - authorized_for_system_information
+        - authorized_for_configuration_information
+        - authorized_for_system_commands
+        - authorized_for_all_services
+        - authorized_for_all_hosts
+        - authorized_for_all_service_commands
+        - authorized_for_all_host_commands
+      notify: Restart Nagios
+
+    - name: Validate Nagios configuration
+      ansible.builtin.command:
+        argv:
+          - nagios4
+          - -v
+          - /etc/nagios4/nagios.cfg
+      changed_when: false
+
+    - name: Validate Apache configuration
+      ansible.builtin.command:
+        argv:
+          - apache2ctl
+          - configtest
+      changed_when: false
+      notify: Restart Apache
+
+    - name: Ensure Nagios and Apache are enabled and running
+      ansible.builtin.service:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+      loop:
+        - nagios4
+        - apache2
+
+  handlers:
+    - name: Restart Nagios
+      ansible.builtin.service:
+        name: nagios4
+        state: restarted
+
+    - name: Restart Apache
+      ansible.builtin.service:
+        name: apache2
+        state: restarted

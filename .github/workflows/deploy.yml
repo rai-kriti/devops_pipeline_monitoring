@@ -1,0 +1,174 @@
+name: Deploy to AWS EC2
+
+on:
+  workflow_run:
+    workflows: ["CD - Build and Push Docker Images"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+
+concurrency:
+  group: devops-observatory-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      ANSIBLE_SSM_BUCKET: ${{ vars.ANSIBLE_SSM_BUCKET }}
+      DOCKERHUB_USERNAME: kritiwork825
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      GITHUB_TOKEN: ${{ secrets.REPO_API_TOKEN }}
+      IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
+      NAGIOS_WEB_PASSWORD: ${{ secrets.NAGIOS_WEB_PASSWORD }}
+
+    steps:
+      - name: Check deployment configuration
+        run: |
+          test -n "$AWS_REGION"
+          test -n "$AWS_DEPLOY_ROLE_ARN"
+          test -n "$TF_STATE_BUCKET"
+          test -n "$ANSIBLE_SSM_BUCKET"
+          test -n "$DOCKERHUB_TOKEN"
+          test -n "$OPENROUTER_API_KEY"
+          test -n "$GITHUB_TOKEN"
+          test -n "$NAGIOS_WEB_PASSWORD"
+
+      - name: Check out the published commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Configure AWS credentials with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Read infrastructure outputs
+        id: infrastructure
+        env:
+          TF_VAR_aws_region: ${{ vars.AWS_REGION }}
+        run: |
+          terraform -chdir=infra/terraform init -input=false \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=devops-observatory/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+          echo "app_instance_id=$(terraform -chdir=infra/terraform output -raw app_instance_id)" >> "$GITHUB_OUTPUT"
+          echo "app_private_ip=$(terraform -chdir=infra/terraform output -raw app_private_ip)" >> "$GITHUB_OUTPUT"
+          echo "nagios_instance_id=$(terraform -chdir=infra/terraform output -raw nagios_instance_id)" >> "$GITHUB_OUTPUT"
+          echo "nagios_private_ip=$(terraform -chdir=infra/terraform output -raw nagios_private_ip)" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve current application public address
+        id: app-address
+        env:
+          APP_INSTANCE_ID: ${{ steps.infrastructure.outputs.app_instance_id }}
+        run: |
+          APP_PUBLIC_IP="$(aws ec2 describe-instances \
+            --instance-ids "$APP_INSTANCE_ID" \
+            --query 'Reservations[0].Instances[0].PublicIpAddress' \
+            --output text)"
+          if [[ -z "$APP_PUBLIC_IP" || "$APP_PUBLIC_IP" == "None" ]]; then
+            echo "::error::The application EC2 instance has no public IPv4 address."
+            exit 1
+          fi
+          echo "app_url=http://${APP_PUBLIC_IP}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ansible and AWS dependencies
+        run: python -m pip install "ansible-core>=2.16,<2.20" boto3 botocore
+
+      - name: Install Ansible AWS collection
+        working-directory: infra/ansible
+        run: ansible-galaxy collection install -r requirements.yml
+
+      - name: Install AWS Session Manager plugin
+        run: |
+          if ! command -v session-manager-plugin >/dev/null 2>&1; then
+            curl --fail --silent --show-error --location \
+              https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb \
+              --output "$RUNNER_TEMP/session-manager-plugin.deb"
+            sudo dpkg -i "$RUNNER_TEMP/session-manager-plugin.deb"
+          fi
+          session-manager-plugin --version
+
+      - name: Create temporary SSM inventory
+        env:
+          APP_INSTANCE_ID: ${{ steps.infrastructure.outputs.app_instance_id }}
+          APP_PRIVATE_IP: ${{ steps.infrastructure.outputs.app_private_ip }}
+          NAGIOS_INSTANCE_ID: ${{ steps.infrastructure.outputs.nagios_instance_id }}
+          NAGIOS_PRIVATE_IP: ${{ steps.infrastructure.outputs.nagios_private_ip }}
+        working-directory: infra/ansible
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          inventory = {
+              "all": {
+                  "vars": {
+                      "ansible_connection": "amazon.aws.aws_ssm",
+                      "ansible_aws_ssm_region": os.environ["AWS_REGION"],
+                      "ansible_aws_ssm_bucket_name": os.environ["ANSIBLE_SSM_BUCKET"],
+                      "ansible_aws_ssm_bucket_sse_mode": "AES256",
+                  },
+                  "children": {
+                      "app": {
+                          "vars": {"nagios_private_ip": os.environ["NAGIOS_PRIVATE_IP"]},
+                          "hosts": {
+                              "observatory-app": {
+                                  "ansible_aws_ssm_instance_id": os.environ["APP_INSTANCE_ID"]
+                              }
+                          },
+                      },
+                      "nagios": {
+                          "vars": {"observatory_app_private_ip": os.environ["APP_PRIVATE_IP"]},
+                          "hosts": {
+                              "observatory-nagios": {
+                                  "ansible_aws_ssm_instance_id": os.environ["NAGIOS_INSTANCE_ID"]
+                              }
+                          },
+                      },
+                  },
+              }
+          }
+          Path("inventory/ci-ssm-inventory.json").write_text(
+              json.dumps(inventory), encoding="utf-8"
+          )
+          PY
+
+      - name: Validate Ansible playbooks
+        working-directory: infra/ansible
+        run: |
+          ansible-playbook --syntax-check \
+            -i inventory/ci-ssm-inventory.json playbooks/deploy-app.yml
+          ansible-playbook --syntax-check \
+            -i inventory/ci-ssm-inventory.json playbooks/configure-nagios.yml
+
+      - name: Deploy application and configure monitoring
+        working-directory: infra/ansible
+        env:
+          FRONTEND_URL: ${{ steps.app-address.outputs.app_url }}
+        run: |
+          ansible-playbook -i inventory/ci-ssm-inventory.json playbooks/deploy-app.yml
+          ansible-playbook -i inventory/ci-ssm-inventory.json playbooks/configure-nagios.yml
