@@ -59,6 +59,7 @@ jobs:
   build-and-push:
     needs: gate-ci
     runs-on: ubuntu-latest
+    environment: production
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
       AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
