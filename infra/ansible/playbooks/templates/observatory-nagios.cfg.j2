@@ -4,6 +4,7 @@ define host {
     alias                   DevOps Observatory application host
     address                 {{ nagios_app_private_ip }}
     check_command           check-host-alive
+    max_check_attempts      5
 }
 
 define command {
